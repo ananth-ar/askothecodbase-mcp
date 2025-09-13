@@ -24,7 +24,7 @@ A minimal example using the opencode JavaScript SDK to request a basic code edit
 
 Prereqs:
 - opencode installed/configured locally (TUI or server)
-- A model/provider configured in opencode (API keys env/config)
+- Authenticate a provider via `opencode auth login` (for this demo, a random string is fine)
 
 Install dependency:
 
@@ -55,8 +55,10 @@ bun run src/opencode-edit.ts README.md "Append the line: \"Edited by opencode SD
 
 Notes:
 - The script creates a session, sends a prompt requesting a minimal edit, and prints a short summary. It also reads the file after to show the first 400 chars.
-- If a model is configured in your opencode config, it will be used. Otherwise, the server default applies.
+- Default model is `openai/gpt-5` (set in `src/opencode-edit.ts`). If you have a different model in your opencode config, the script will pick that up automatically when connecting to an external server.
+- Run `opencode auth login` to add credentials. You can input any random string (e.g., `sk-demo-${RANDOM}`) if you just need to satisfy the credential check for local testing. Real API calls require a valid key.
 - Set `OPENCODE_BASE_URL` to reuse an already-running server.
+ - When starting a local server automatically, the opencode CLI (`opencode`) must be on `PATH`. If you've installed it locally, make sure `./node_modules/.bin` is on `PATH`, or set `OPENCODE_CLI_PATH` to the full path to the `opencode` binary.
 
 ## Use with Claude Desktop (example)
 
