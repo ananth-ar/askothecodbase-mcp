@@ -1,126 +1,156 @@
-import { createOpencodeClient, createOpencodeServer } from "@opencode-ai/sdk";
-
-type ServerHandle = { url: string; close: () => void } | null;
-
-function toModel(
-  input: string | undefined
-): { providerID: string; modelID: string } | undefined {
-  if (!input) return undefined;
-  const [providerID, ...rest] = input.split("/");
-  const modelID = rest.join("/");
-  if (!providerID || !modelID) return undefined;
-  return { providerID, modelID };
-}
-
-async function pickModel(baseUrl: string) {
-  const client = createOpencodeClient({ baseUrl, responseStyle: "data" });
-  try {
-    // Try to use configured model from the server config
-    const cfg = await client.config.get();
-    const parsed = toModel((cfg as any)?.model);
-    if (parsed) return parsed;
-  } catch {
-    // Fall back if server not ready yet (e.g., starting programmatically)
-  }
-  // As a last resort, let the server default decide (omit model)
-  return undefined;
-}
-
-async function ensureServer(): Promise<{
-  baseUrl: string;
-  server: ServerHandle;
-}> {
-  const baseUrl = process.env.OPENCODE_BASE_URL ?? "http://127.0.0.1:4096";
-  if (process.env.OPENCODE_BASE_URL) {
-    return { baseUrl, server: null };
-  }
-
-  // Start a local server with permissive edit permissions to avoid approval prompts
-  const server = await createOpencodeServer({
-    hostname: "127.0.0.1",
-    port: 4096,
-    config: {
-      // Default model for demo runs
-      model: "openai/gpt-5",
-      // Allow edits without asking to keep this demo simple
-      permission: { edit: "allow" },
-    } as any,
-  });
-  return { baseUrl: server.url, server };
-}
+import { createOpencodeClient } from "@opencode-ai/sdk";
+import fs from "node:fs";
+import { ensureServer } from "./opencode-edit/server.ts";
+import { pickModel, toModel } from "./opencode-edit/model.ts";
+import {
+  sendPromptWithRetry,
+  tryFetchAssistantMessage,
+} from "./opencode-edit/interactions.ts";
+import { unwrap } from "./opencode-edit/sdk.ts";
 
 export async function main() {
-  // Accept CLI args: path and a short instruction. Defaults kept simple.
-  const targetPath = process.argv[2] ?? "D:\react_opencodetest";
+  // Read target path strictly from environment (.env) or default to CWD
+  const targetPathInput =
+    process.env.OPENCODE_TARGET_PATH ||
+    process.cwd();
+
+  // Normalize path separators so downstream consumers see a stable form.
+  // Using forward slashes is safe on Windows APIs.
+  const targetPath = targetPathInput.replace(/\\/g, "/");
+  const sessionDir = (() => {
+    const last = targetPath.split("/").pop() ?? targetPath;
+    if (/\.[A-Za-z0-9]+$/.test(last)) {
+      const idx = targetPath.lastIndexOf("/");
+      return idx > 0 ? targetPath.slice(0, idx) : ".";
+    }
+    return targetPath;
+  })();
+
   const instruction =
-    process.argv.slice(3).join(" ") ||
-    // `Append the line \n\n"Edited by opencode SDK demo"\n\n` +
-    //   `at the end of ${targetPath}. Use the edit tool with a minimal change.`;
-    `in this path D:\react_opencodetest a react project is here now i
-     want to make nice looking login page have full freedom in design choice `;
+    process.env.OPENCODE_INSTRUCTION ||
+    process.env.EDIT_INSTRUCTION ||
+    `Create a clean, modern login page in the project at ${JSON.stringify(
+      targetPath
+    )}. You may add files as needed (components, styles, route). Keep changes minimal but functional.`;
+
+  // Ensure target directory exists so file operations can succeed
+  try {
+    if (!fs.existsSync(sessionDir)) {
+      fs.mkdirSync(sessionDir, { recursive: true });
+      console.log("Created directory:", JSON.stringify(sessionDir));
+    }
+  } catch (err) {
+    console.warn(
+      "Could not create directory:",
+      JSON.stringify(sessionDir),
+      String(err)
+    );
+  }
 
   const { baseUrl, server } = await ensureServer();
   const client = createOpencodeClient({ baseUrl, responseStyle: "data" });
 
-  // Optionally set OpenAI credentials programmatically via env
-  // Safer than hardcoding; use `OPENAI_API_KEY` in your shell/.env
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey) {
-    try {
-      await client.auth.set({
-        path: { id: "openai" },
-        body: { type: "api", key: openaiKey },
-      } as any);
-    } catch (e) {
-      console.error("Failed to set OpenAI key via client.auth.set:", e);
-    }
-  }
+  // Resolve model: env override, else server config, else omit.
+  const envModel = toModel(process.env.OPENCODE_MODEL);
+  const chosenModel = envModel ?? (await pickModel(baseUrl));
 
-  // Pick a model if server config has one; otherwise omit and let server decide.
-  const chosenModel = await pickModel(baseUrl);
-
-  // Create a session
-  const session = await client.session.create({
+  // Create a session scoped to the target directory
+  const sessionRes = await client.session.create({
     body: { title: "SDK code edit demo" },
+    query: { directory: sessionDir },
   });
 
-  if (!session.data?.id) {
+  const session = unwrap(sessionRes);
+  if (!session?.id) {
     throw new Error("Session ID is undefined");
   }
 
   console.log("starting edit");
+  console.log("Resolved target path:", JSON.stringify(targetPath));
+  if (sessionDir !== targetPath) {
+    console.log("Scoping session to directory:", JSON.stringify(sessionDir));
+  }
   // Ask the agent to apply a minimal edit
-  const result = await client.session.prompt({
-    path: { id: session.data.id },
-    body: {
-      ...(chosenModel ? { model: chosenModel } : {}),
-      parts: [
-        {
-          type: "text",
-          text:
-            `Edit the file ${targetPath} in this workspace. ` +
-            `Make the following exact change: ${instruction} `,
-        },
-      ],
-    },
+  if (chosenModel) {
+    console.log(
+      "Requesting model:",
+      `${chosenModel.providerID}/${chosenModel.modelID}`
+    );
+  } else {
+    console.log("Using agent: build (no explicit model)");
+  }
+  const result = await sendPromptWithRetry({
+    client,
+    sessionId: session.id,
+    sessionDir,
+    chosenModel: chosenModel as any,
+    instruction,
+    targetPath,
   });
   console.log("edit completed");
-  // Print a concise summary of what happened
-  const summary = {
-    sessionId: session.data?.id,
+  // Print a concise summary of what happened. Some servers stream and respond
+  // with empty bodies initially; try to resolve the last assistant message.
+  const baseSummary = {
+    sessionId: session.id,
     messageId: (result as any)?.info?.id,
+    model: (result as any)?.info?.providerID
+      ? `${(result as any)?.info?.providerID}/${(result as any)?.info?.modelID}`
+      : undefined,
+    error: (result as any)?.info?.error ?? null,
     parts: (result as any)?.parts?.map((p: any) => p.type),
-  };
-  console.log("Edit request sent. Result summary:", summary);
+  } as any;
+
+  let resolved = baseSummary;
+  if (!baseSummary.messageId || !baseSummary.model) {
+    const last = await tryFetchAssistantMessage({
+      client,
+      sessionId: session.id,
+    });
+    if (last?.info) {
+      resolved = {
+        ...resolved,
+        messageId: last.info.id,
+        model:
+          last.info?.providerID && last.info?.modelID
+            ? `${last.info.providerID}/${last.info.modelID}`
+            : resolved.model,
+        error: last.info?.error ?? resolved.error,
+        parts: Array.isArray(last.parts)
+          ? last.parts.map((p: any) => p.type)
+          : resolved.parts,
+      };
+    }
+  }
+
+  console.log("Edit request sent. Result summary:", resolved);
 
   // Optional: show the final file content to verify
   try {
-    const content = await client.file.read({ query: { path: targetPath } });
-    console.log(`\nCurrent ${targetPath} content (truncated to 400 chars):\n`);
-    const out = content.data?.content ?? "";
-    console.log(out.slice(0, 400));
+    // Show a quick snapshot of project files from the scoped directory
+    const filesRes = await client.find.files({
+      query: { query: "*", directory: sessionDir } as any,
+    });
+    const files = unwrap(filesRes);
+    const first = Array.isArray(files) && files[0];
+    console.log(
+      `\nFound ${
+        Array.isArray(files) ? files.length : 0
+      } files in ${JSON.stringify(sessionDir)}.`
+    );
+    if (first && typeof first === "string") {
+      const contentRes = await client.file.read({
+        query: { path: first, directory: sessionDir },
+      });
+      const content = unwrap(contentRes);
+      console.log(`\nPreview of ${first} (first 400 chars):\n`);
+      const out = (content as any)?.content ?? "";
+      console.log(String(out).slice(0, 400));
+    }
   } catch (err) {
-    console.warn(`Could not read ${targetPath}:`, (err as Error).message);
+    console.warn(
+      `Could not enumerate files or preview in ${sessionDir}:`,
+      (err as Error).message
+    );
   }
 
   // Clean up if we started a server programmatically

@@ -3,8 +3,14 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "dev": "bun run src/login-server.ts",
+    "login": "bun run src/login-server.ts",
+    "start": "bun run index.ts"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "^20"
   },
   "peerDependencies": {
     "typescript": "^5"
