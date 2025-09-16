@@ -1,3 +1,22 @@
+# Code Analysis MCP
+
+This repository hosts a read-only Model Context Protocol server powered by opencode.
+Use it to investigate unfamiliar codebases, map architecture, and answer API questions without mutating files.
+
+## Agent Expectations
+
+- Operate strictly in analysis mode; never request write/edit/bash permissions.
+- Highlight control flow, data shapes, and file locations when summarising answers.
+- Reference the `ask-other-codebase` MCP tool whenever a question spans another repository.
+- Record notable context (paths, models, assumptions) in your responses so downstream tooling can reuse it.
+
+## Tooling Overview
+
+- `ask-other-codebase`: query another project for architecture/API details. Returns long-form analysis plus metadata (session id, generated instruction files).
+- Automatically ensure `AGENTS.md` and `opencode.json` exist in the inspected project.
+
+---
+
 # Repository Guidelines
 
 ## Project Structure & Module Organization
@@ -42,3 +61,4 @@
 - When adding behavior, include tests and brief docs/examples.
 
 - This project uses the opencode SDK at its core for development. Refer to the `docs/` folder for SDK documentation and guidance.
+

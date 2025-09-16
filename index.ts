@@ -1,5 +1,6 @@
-import { main } from "./src/opencode-edit.ts";
-main().catch((err) => {
-  console.error("SDK edit demo failed:", err);
+import { startCodeAnalysisServer } from "./src/code-analysis/server.ts";
+
+startCodeAnalysisServer().catch((error) => {
+  console.error("Failed to start code analysis MCP server:", error);
   process.exit(1);
 });
