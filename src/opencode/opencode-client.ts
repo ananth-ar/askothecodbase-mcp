@@ -1,6 +1,6 @@
 import { createOpencodeClient } from "@opencode-ai/sdk";
-import type { ServerHandle } from "../opencode-edit/server.ts";
-import { ensureServer } from "../opencode-edit/server.ts";
+import type { ServerHandle } from "./server.ts";
+import { ensureServer } from "./server.ts";
 
 let cachedBaseUrl: string | null = null;
 let activeServer: ServerHandle = null;
@@ -43,20 +43,4 @@ async function ensureBaseUrl(): Promise<string> {
 export async function createAnalysisClient() {
   const baseUrl = await ensureBaseUrl();
   return createOpencodeClient({ baseUrl, responseStyle: "data" });
-}
-
-export async function getOpencodeBaseUrl(): Promise<string> {
-  return ensureBaseUrl();
-}
-
-export function shutdownOpencodeServer() {
-  if (activeServer) {
-    try {
-      activeServer.close();
-    } catch {
-      // ignore cleanup errors
-    }
-  }
-  activeServer = null;
-  cachedBaseUrl = null;
 }

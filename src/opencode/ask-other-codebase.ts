@@ -1,10 +1,29 @@
 import path from "node:path";
 import { z } from "zod";
-
-import { tryFetchAssistantMessage } from "../opencode-edit/interactions.ts";
-import { unwrap } from "../opencode-edit/sdk.ts";
 import { createAnalysisClient } from "./opencode-client.ts";
 import { ensureProjectSetup } from "./project-setup.ts";
+
+export type SdkResult<T> =
+  | ({ data: T; error: undefined } & { request?: unknown; response?: unknown })
+  | ({ data: undefined; error: any } & {
+      request?: unknown;
+      response?: unknown;
+    });
+
+export function unwrap(res: SdkResult<any>) {
+  const r = res;
+  if (r && typeof r === "object" && ("data" in r || "error" in r)) {
+    if (r.error) {
+      const msg =
+        typeof r.error?.message === "string"
+          ? r.error.message
+          : "SDK request failed";
+      throw new Error(msg);
+    }
+    return r.data;
+  }
+  return res;
+}
 
 export const askOtherCodebaseParamsSchema = z.object({
   projectPath: z.string().min(1, "projectPath is required"),
@@ -141,4 +160,30 @@ export async function askOtherCodebase(
     createdAgents: setup.createdAgents,
     createdConfig: setup.createdConfig,
   };
+}
+
+export async function tryFetchAssistantMessage(params: {
+  client: any;
+  sessionId: string;
+  retries?: number;
+  delayMs?: number;
+}) {
+  const { client, sessionId, retries = 10, delayMs = 1000 } = params;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const messagesRes = await client.session.messages({
+        path: { id: sessionId },
+      });
+      const messages = unwrap(messagesRes);
+      const assistants = Array.isArray(messages)
+        ? messages.filter((m: any) => m?.info?.role === "assistant")
+        : [];
+      const last = assistants[assistants.length - 1];
+      if (last?.info) return last;
+    } catch {
+      // ignore and retry
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
 }

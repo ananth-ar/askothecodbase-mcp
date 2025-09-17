@@ -1,4 +1,4 @@
-import { startCodeAnalysisServer } from "./src/code-analysis/server.ts";
+import { startCodeAnalysisServer } from "./src/mcp.ts";
 
 startCodeAnalysisServer().catch((error) => {
   console.error("Failed to start code analysis MCP server:", error);

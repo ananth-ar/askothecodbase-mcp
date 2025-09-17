@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   askOtherCodebase,
   askOtherCodebaseParamsSchema,
-} from "./ask-other-codebase.ts";
+} from "./opencode/ask-other-codebase.ts";
 
 export function createCodeAnalysisServer(): McpServer {
   const server = new McpServer({
@@ -13,30 +13,25 @@ export function createCodeAnalysisServer(): McpServer {
     capabilities: { tools: {}, resources: {} },
   });
 
-  server.tool(
+  server.registerTool(
     "ask-other-codebase",
-    "Retrieve architecture, API insights, code snippets and other information from another codebase",
-    askOtherCodebaseParamsSchema,
-    async ({
-      projectPath,
-      question,
-    }: {
-      projectPath: string;
-      question: string;
-    }) => {
+    {
+      description:
+        "Retrieve architecture, API insights, code snippets and other information from another codebase",
+      inputSchema: askOtherCodebaseParamsSchema.shape,
+    },
+    async ({ projectPath, question }) => {
       const result = await askOtherCodebase({ projectPath, question });
+      const meta = {
+        projectRoot: result.projectRoot,
+        sessionId: result.sessionId,
+        createdAgents: result.createdAgents,
+        createdConfig: result.createdConfig,
+      };
       return {
         content: [
-          { type: "text" as const, text: result.answer },
-          {
-            type: "json" as const,
-            json: {
-              projectRoot: result.projectRoot,
-              sessionId: result.sessionId,
-              createdAgents: result.createdAgents,
-              createdConfig: result.createdConfig,
-            },
-          },
+          { type: "text", text: result.answer },
+          { type: "text", text: JSON.stringify(meta, null, 2) },
         ],
       };
     }

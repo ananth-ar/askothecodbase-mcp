@@ -19,6 +19,8 @@ This project is prepared for read-only architectural analysis.
 - Answer deep questions about APIs, data flow, and module relationships.
 - Cite relevant paths (e.g. "src/users/service.ts") when referencing code.
 - Do **not** plan or attempt file edits, commits, or command execution.
+- When code snippets or type definitions are requested, include the full, exact structures instead of placeholders.
+- Capture notable context (key paths, models, assumptions) so downstream tools can reuse it.
 - Prefer structured walkthroughs over high-level summaries when explaining systems.
 
 ## Tips for Investigations
@@ -30,7 +32,32 @@ This project is prepared for read-only architectural analysis.
 
 const DEFAULT_CONFIG = {
   $schema: "https://opencode.ai/config.json",
-  instructions: ["AGENTS.md"],
+  instructions: ["AGENTS.md", "opencode.json"],
+  permission: {
+    edit: "deny",
+    bash: {
+      ls: "allow",
+      "ls *": "allow",
+      pwd: "allow",
+      "find *": "allow",
+      "fd *": "allow",
+      "rg *": "allow",
+      "grep *": "allow",
+      "egrep *": "allow",
+      "fgrep *": "allow",
+      "cat *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "wc *": "allow",
+      "stat *": "allow",
+      "tree *": "allow",
+      "git status": "allow",
+      "git diff": "allow",
+      "git show *": "allow",
+      "git log *": "allow",
+      "*": "deny",
+    },
+  },
   agent: {
     "code-analysis": {
       description:
@@ -40,7 +67,11 @@ const DEFAULT_CONFIG = {
       tools: {
         write: false,
         edit: false,
-        bash: false,
+        bash: true,
+        read: true,
+        list: true,
+        glob: true,
+        grep: true,
       },
     },
   },

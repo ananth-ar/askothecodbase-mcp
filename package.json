@@ -5,18 +5,19 @@
   "private": true,
   "scripts": {
     "dev": "bun run src/login-server.ts",
-    "login": "bun run src/login-server.ts",
-    "start": "bun run index.ts"
+    "start": "bun run index.ts",
+    "build": "bun build ./index.ts --outdir ./build --target bun --external @opencode-ai/sdk"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "^20"
+    "@types/node": "^24.5.1",
+    "typescript": "^5.9.2"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.18.0",
+    "@modelcontextprotocol/sdk": "1.17.3",
     "@opencode-ai/sdk": "^0.7.9",
     "zod": "3"
   }

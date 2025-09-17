@@ -25,7 +25,7 @@ export async function ensureServer(): Promise<{
   if (baseUrlEnv) {
     const ok = await isServerReachable(baseUrlEnv);
     if (ok) {
-      console.log("Using existing opencode server:", baseUrlEnv);
+      // console.info("Using existing opencode server:", baseUrlEnv);
       return { baseUrl: baseUrlEnv, server: null };
     }
     console.warn(
@@ -44,7 +44,7 @@ export async function ensureServer(): Promise<{
         port,
         // Do not override config here; allow opencode.json (local or global) to apply
       });
-      console.log("Started local opencode server:", server.url);
+      // console.info("Started local opencode server:", server.url);
       return { baseUrl: server.url, server };
     } catch (err) {
       lastErr = err;

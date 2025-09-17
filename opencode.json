@@ -2,8 +2,34 @@
   "model": "anthropic/claude-sonnet-4-20250514",
   "small_model": "anthropic/claude-3-5-haiku-20241022",
   "instructions": [
-    "AGENTS.md"
+    "AGENTS.md",
+    "opencode.json"
   ],
+  "permission": {
+    "edit": "deny",
+    "bash": {
+      "ls": "allow",
+      "ls *": "allow",
+      "pwd": "allow",
+      "find *": "allow",
+      "fd *": "allow",
+      "rg *": "allow",
+      "grep *": "allow",
+      "egrep *": "allow",
+      "fgrep *": "allow",
+      "cat *": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "wc *": "allow",
+      "stat *": "allow",
+      "tree *": "allow",
+      "git status": "allow",
+      "git diff": "allow",
+      "git show *": "allow",
+      "git log *": "allow",
+      "*": "deny"
+    }
+  },
   "agent": {
     "code-analysis": {
       "description": "Read-only expert that maps architecture, APIs, and critical flows for this repository.",
@@ -12,7 +38,11 @@
       "tools": {
         "write": false,
         "edit": false,
-        "bash": false
+        "bash": true,
+        "read": true,
+        "list": true,
+        "glob": true,
+        "grep": true
       }
     }
   },

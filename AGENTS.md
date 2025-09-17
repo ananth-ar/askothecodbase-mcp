@@ -2,6 +2,8 @@
 
 This repository hosts a read-only Model Context Protocol server powered by opencode.
 Use it to investigate unfamiliar codebases, map architecture, and answer API questions without mutating files.
+This project uses the opencode SDK at its core for development so anything bit related to this is asked then always refer to the `docs/` folder 
+for SDK documentation.
 
 ## Agent Expectations
 
@@ -23,15 +25,12 @@ Use it to investigate unfamiliar codebases, map architecture, and answer API que
 
 - Entry point: `index.ts` at the repo root (Bun/ESM).
 - Prefer new source files under `src/` (e.g., `src/utils/format.ts`).
-- Tests live in `tests/` or co‑located as `*.test.ts` next to the unit under test.
 - Place static assets in `assets/` and import via ESM URLs.
 
 ## Build, Test, and Development Commands
 
 - `bun install` — install dependencies (uses `bun.lock`).
 - `bun run index.ts` — run the main program locally.
-- `bun test` — run the test suite; add `--watch` to iterate.
-- `bun test --coverage` — generate coverage output in `coverage/`.
 
 ## Coding Style & Naming Conventions
 
@@ -39,7 +38,7 @@ Use it to investigate unfamiliar codebases, map architecture, and answer API que
 - Filenames: `kebab-case.ts` for modules, `PascalCase.tsx` for React components (if added).
 - Identifiers: `camelCase` for variables/functions, `PascalCase` for classes/types.
 - Prefer `const`, narrow types, and explicit return types for exported APIs.
-- Keep modules small and focused; avoid side effects at import time.
+- Keep modules small and focused amd readble; avoid side effects at import time.
 
 ## Commit & Pull Request Guidelines
 
@@ -56,9 +55,7 @@ Use it to investigate unfamiliar codebases, map architecture, and answer API que
 
 ## Agent‑Specific Notes
 
-- Make minimal, focused changes consistent with existing patterns.
+- Make minimal, focused readable changes consistent with existing patterns.
 - Use Bun commands for scripts and tests; do not switch package managers.
-- When adding behavior, include tests and brief docs/examples.
-
-- This project uses the opencode SDK at its core for development. Refer to the `docs/` folder for SDK documentation and guidance.
-
+- When adding behavior, include  brief docs/examples.
+-if anything related to library/package/module/sdk/etc is asked then first refer to its documentation
