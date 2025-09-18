@@ -13176,26 +13176,13 @@ class StdioServerTransport {
   }
 }
 
-// src/code-analysis/ask-other-codebase.ts
+// src/opencode/ask-other-codebase.ts
 import path2 from "path";
 
-// src/opencode-edit/sdk.ts
-function unwrap(res) {
-  const r = res;
-  if (r && typeof r === "object" && (("data" in r) || ("error" in r))) {
-    if (r.error) {
-      const msg = typeof r.error?.message === "string" ? r.error.message : "SDK request failed";
-      throw new Error(msg);
-    }
-    return r.data;
-  }
-  return res;
-}
-
-// src/code-analysis/opencode-client.ts
+// src/opencode/opencode-client.ts
 import { createOpencodeClient } from "@opencode-ai/sdk";
 
-// src/opencode-edit/server.ts
+// src/opencode/server.ts
 import { createOpencodeServer } from "@opencode-ai/sdk";
 async function isServerReachable(baseUrl) {
   const url = `${baseUrl.replace(/\/$/, "")}/app`;
@@ -13239,7 +13226,7 @@ async function ensureServer() {
 Original error: ${lastErr?.message}`);
 }
 
-// src/code-analysis/opencode-client.ts
+// src/opencode/opencode-client.ts
 var cachedBaseUrl = null;
 var activeServer = null;
 var cleanupRegistered = false;
@@ -13279,10 +13266,14 @@ async function createAnalysisClient() {
   return createOpencodeClient({ baseUrl, responseStyle: "data" });
 }
 
-// src/code-analysis/project-setup.ts
+// src/opencode/project-setup.ts
 import { constants as fsConstants } from "fs";
 import fs from "fs/promises";
 import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import os from "os";
+var execFileAsync = promisify(execFile);
 var DEFAULT_AGENTS_CONTENT = `# Code Analysis Agent
 
 This project is prepared for read-only architectural analysis.
@@ -13366,16 +13357,64 @@ async function fileExists(target) {
     return false;
   }
 }
+function isGitUrl(input) {
+  const gitPatterns = [
+    /^https:\/\/github\.com\/[^\/]+\/[^\/]+(?:\.git)?(?:\/.*)?$/,
+    /^https:\/\/gitlab\.com\/[^\/]+\/[^\/]+(?:\.git)?(?:\/.*)?$/,
+    /^https:\/\/bitbucket\.org\/[^\/]+\/[^\/]+(?:\.git)?(?:\/.*)?$/,
+    /^git@github\.com:[^\/]+\/[^\/]+(?:\.git)?$/,
+    /^git@gitlab\.com:[^\/]+\/[^\/]+(?:\.git)?$/,
+    /^git@bitbucket\.org:[^\/]+\/[^\/]+(?:\.git)?$/,
+    /^https:\/\/[^\/]+\/.*\.git$/,
+    /^git:\/\/[^\/]+\/.*$/
+  ];
+  return gitPatterns.some((pattern) => pattern.test(input));
+}
+function normalizeGitUrl(gitUrl) {
+  let normalized = gitUrl.replace(/\/$/, "").split("#")[0];
+  if (normalized?.startsWith("https://") && !normalized.endsWith(".git")) {
+    normalized += ".git";
+  }
+  return normalized || "";
+}
+function extractRepoName(gitUrl) {
+  const normalized = normalizeGitUrl(gitUrl);
+  const match = normalized.match(/\/([^\/]+?)(?:\.git)?$/);
+  return match ? match[1] || "cloned-repo" : "cloned-repo";
+}
+async function cloneRepository(gitUrl, targetDir) {
+  const normalizedUrl = normalizeGitUrl(gitUrl);
+  try {
+    await execFileAsync("git", ["clone", "--depth", "1", normalizedUrl, targetDir], {
+      timeout: 300000
+    });
+  } catch (error) {
+    throw new Error(`Failed to clone repository: ${error.message}`);
+  }
+}
 async function ensureProjectSetup(inputPath) {
   if (!inputPath) {
     throw new Error("Project path is required");
   }
-  const resolved = path.resolve(inputPath);
-  const stats = await pathStats(resolved);
-  if (!stats) {
-    throw new Error(`Project path does not exist: ${resolved}`);
+  let projectRoot;
+  let clonedFromGit = false;
+  let gitUrl;
+  if (isGitUrl(inputPath)) {
+    gitUrl = inputPath;
+    const repoName = extractRepoName(inputPath);
+    const tempDir = os.tmpdir();
+    const cloneTarget = path.join(tempDir, `code-analysis-${Date.now()}-${repoName}`);
+    await cloneRepository(inputPath, cloneTarget);
+    projectRoot = cloneTarget;
+    clonedFromGit = true;
+  } else {
+    const resolved = path.resolve(inputPath);
+    const stats = await pathStats(resolved);
+    if (!stats) {
+      throw new Error(`Project path does not exist: ${resolved}`);
+    }
+    projectRoot = stats.isDirectory() ? resolved : path.dirname(resolved);
   }
-  const projectRoot = stats.isDirectory() ? resolved : path.dirname(resolved);
   const agentsPath = path.join(projectRoot, "AGENTS.md");
   const configPath = path.join(projectRoot, "opencode.json");
   let createdAgents = false;
@@ -13395,14 +13434,27 @@ async function ensureProjectSetup(inputPath) {
     agentsPath,
     configPath,
     createdAgents,
-    createdConfig
+    createdConfig,
+    clonedFromGit,
+    gitUrl
   };
 }
 
-// src/code-analysis/ask-other-codebase.ts
+// src/opencode/ask-other-codebase.ts
+function unwrap(res) {
+  const r = res;
+  if (r && typeof r === "object" && (("data" in r) || ("error" in r))) {
+    if (r.error) {
+      const msg = typeof r.error?.message === "string" ? r.error.message : "SDK request failed";
+      throw new Error(msg);
+    }
+    return r.data;
+  }
+  return res;
+}
 var askOtherCodebaseParamsSchema = exports_external.object({
-  projectPath: exports_external.string().min(1, "projectPath is required"),
-  question: exports_external.string().min(1, "question is required")
+  projectPath: exports_external.string().min(1).describe("Local file path or Git repository URL (GitHub, GitLab, Bitbucket, etc.)"),
+  question: exports_external.string().min(1).describe("Question about the codebase architecture, APIs, or implementation details")
 });
 function collectText(parts) {
   if (!Array.isArray(parts))
@@ -13488,9 +13540,16 @@ async function askOtherCodebase(params) {
   });
   let texts = collectText(result?.parts);
   if (!texts.length) {
+    const fallback = await tryFetchAssistantMessage({ client, sessionId });
+    texts = collectText(fallback?.parts);
+  }
+  if (!texts.length) {
     throw new Error("The analysis agent returned no text response");
   }
   const summarySegments = [];
+  if (setup.clonedFromGit && setup.gitUrl) {
+    summarySegments.push(`Cloned repository from ${setup.gitUrl} to ${setup.projectRoot}.`);
+  }
   if (setup.createdAgents || setup.createdConfig) {
     const created = [];
     if (setup.createdAgents)
@@ -13509,11 +13568,30 @@ async function askOtherCodebase(params) {
 
 `),
     createdAgents: setup.createdAgents,
-    createdConfig: setup.createdConfig
+    createdConfig: setup.createdConfig,
+    clonedFromGit: setup.clonedFromGit,
+    gitUrl: setup.gitUrl
   };
 }
+async function tryFetchAssistantMessage(params) {
+  const { client, sessionId, retries = 10, delayMs = 1000 } = params;
+  for (let i = 0;i < retries; i++) {
+    try {
+      const messagesRes = await client.session.messages({
+        path: { id: sessionId }
+      });
+      const messages = unwrap(messagesRes);
+      const assistants = Array.isArray(messages) ? messages.filter((m) => m?.info?.role === "assistant") : [];
+      const last = assistants[assistants.length - 1];
+      if (last?.info)
+        return last;
+    } catch {}
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
+}
 
-// src/code-analysis/server.ts
+// src/mcp.ts
 function createCodeAnalysisServer() {
   const server = new McpServer({
     name: "code-analysis-mcp",
@@ -13521,7 +13599,7 @@ function createCodeAnalysisServer() {
     capabilities: { tools: {}, resources: {} }
   });
   server.registerTool("ask-other-codebase", {
-    description: "Retrieve architecture, API insights, code snippets and other information from another codebase",
+    description: "Retrieve architecture, API insights, code snippets and other information from another codebase. Supports both local file paths and Git repository URLs (GitHub, GitLab, Bitbucket, etc.)",
     inputSchema: askOtherCodebaseParamsSchema.shape
   }, async ({ projectPath, question }) => {
     const result = await askOtherCodebase({ projectPath, question });
@@ -13529,7 +13607,9 @@ function createCodeAnalysisServer() {
       projectRoot: result.projectRoot,
       sessionId: result.sessionId,
       createdAgents: result.createdAgents,
-      createdConfig: result.createdConfig
+      createdConfig: result.createdConfig,
+      clonedFromGit: result.clonedFromGit,
+      gitUrl: result.gitUrl
     };
     return {
       content: [

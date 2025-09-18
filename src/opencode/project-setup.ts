@@ -1,6 +1,11 @@
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import os from "node:os";
+
+const execFileAsync = promisify(execFile);
 
 export interface EnsureProjectSetupResult {
   projectRoot: string;
@@ -8,6 +13,8 @@ export interface EnsureProjectSetupResult {
   configPath: string;
   createdAgents: boolean;
   createdConfig: boolean;
+  clonedFromGit?: boolean;
+  gitUrl?: string;
 }
 
 const DEFAULT_AGENTS_CONTENT = `# Code Analysis Agent
@@ -98,6 +105,52 @@ async function fileExists(target: string): Promise<boolean> {
   }
 }
 
+function isGitUrl(input: string): boolean {
+  // Check for common Git URL patterns
+  const gitPatterns = [
+    /^https:\/\/github\.com\/[^\/]+\/[^\/]+(?:\.git)?(?:\/.*)?$/,
+    /^https:\/\/gitlab\.com\/[^\/]+\/[^\/]+(?:\.git)?(?:\/.*)?$/,
+    /^https:\/\/bitbucket\.org\/[^\/]+\/[^\/]+(?:\.git)?(?:\/.*)?$/,
+    /^git@github\.com:[^\/]+\/[^\/]+(?:\.git)?$/,
+    /^git@gitlab\.com:[^\/]+\/[^\/]+(?:\.git)?$/,
+    /^git@bitbucket\.org:[^\/]+\/[^\/]+(?:\.git)?$/,
+    /^https:\/\/[^\/]+\/.*\.git$/,
+    /^git:\/\/[^\/]+\/.*$/,
+  ];
+
+  return gitPatterns.some(pattern => pattern.test(input));
+}
+
+function normalizeGitUrl(gitUrl: string): string {
+  // Remove trailing slash and fragments
+  let normalized = gitUrl.replace(/\/$/, '').split('#')[0];
+
+  // Ensure .git extension for HTTPS URLs if not present
+  if (normalized?.startsWith('https://') && !normalized.endsWith('.git')) {
+    normalized += '.git';
+  }
+
+  return normalized || '';
+}
+
+function extractRepoName(gitUrl: string): string {
+  const normalized = normalizeGitUrl(gitUrl);
+  const match = normalized.match(/\/([^\/]+?)(?:\.git)?$/);
+  return match ? match[1] || 'cloned-repo' : 'cloned-repo';
+}
+
+async function cloneRepository(gitUrl: string, targetDir: string): Promise<void> {
+  const normalizedUrl = normalizeGitUrl(gitUrl);
+
+  try {
+    await execFileAsync('git', ['clone', '--depth', '1', normalizedUrl, targetDir], {
+      timeout: 300000, // 5 minute timeout
+    });
+  } catch (error: any) {
+    throw new Error(`Failed to clone repository: ${error.message}`);
+  }
+}
+
 export async function ensureProjectSetup(
   inputPath: string
 ): Promise<EnsureProjectSetupResult> {
@@ -105,15 +158,30 @@ export async function ensureProjectSetup(
     throw new Error("Project path is required");
   }
 
-  const resolved = path.resolve(inputPath);
-  const stats = await pathStats(resolved);
-  if (!stats) {
-    throw new Error(`Project path does not exist: ${resolved}`);
-  }
+  let projectRoot: string;
+  let clonedFromGit = false;
+  let gitUrl: string | undefined;
 
-  const projectRoot = stats.isDirectory()
-    ? resolved
-    : path.dirname(resolved);
+  if (isGitUrl(inputPath)) {
+    // Handle Git URL
+    gitUrl = inputPath;
+    const repoName = extractRepoName(inputPath);
+    const tempDir = os.tmpdir();
+    const cloneTarget = path.join(tempDir, `code-analysis-${Date.now()}-${repoName}`);
+
+    await cloneRepository(inputPath, cloneTarget);
+    projectRoot = cloneTarget;
+    clonedFromGit = true;
+  } else {
+    // Handle local path
+    const resolved = path.resolve(inputPath);
+    const stats = await pathStats(resolved);
+    if (!stats) {
+      throw new Error(`Project path does not exist: ${resolved}`);
+    }
+
+    projectRoot = stats.isDirectory() ? resolved : path.dirname(resolved);
+  }
 
   const agentsPath = path.join(projectRoot, "AGENTS.md");
   const configPath = path.join(projectRoot, "opencode.json");
@@ -138,5 +206,7 @@ export async function ensureProjectSetup(
     configPath,
     createdAgents,
     createdConfig,
+    clonedFromGit,
+    gitUrl,
   };
 }

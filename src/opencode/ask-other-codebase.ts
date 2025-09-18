@@ -26,8 +26,8 @@ export function unwrap(res: SdkResult<any>) {
 }
 
 export const askOtherCodebaseParamsSchema = z.object({
-  projectPath: z.string().min(1, "projectPath is required"),
-  question: z.string().min(1, "question is required"),
+  projectPath: z.string().min(1).describe("Local file path or Git repository URL (GitHub, GitLab, Bitbucket, etc.)"),
+  question: z.string().min(1).describe("Question about the codebase architecture, APIs, or implementation details"),
 });
 
 export type AskOtherCodebaseParams = z.infer<
@@ -40,6 +40,8 @@ export interface AskOtherCodebaseResult {
   answer: string;
   createdAgents: boolean;
   createdConfig: boolean;
+  clonedFromGit?: boolean;
+  gitUrl?: string;
 }
 
 function collectText(parts: unknown): string[] {
@@ -143,6 +145,15 @@ export async function askOtherCodebase(
   }
 
   const summarySegments: string[] = [];
+
+  // Add Git cloning information if applicable
+  if (setup.clonedFromGit && setup.gitUrl) {
+    summarySegments.push(
+      `Cloned repository from ${setup.gitUrl} to ${setup.projectRoot}.`
+    );
+  }
+
+  // Add setup information
   if (setup.createdAgents || setup.createdConfig) {
     const created: string[] = [];
     if (setup.createdAgents) created.push("AGENTS.md");
@@ -151,6 +162,7 @@ export async function askOtherCodebase(
       "Initialized " + created.join(" and ") + " in " + setup.projectRoot + "."
     );
   }
+
   summarySegments.push(texts.join("\n\n"));
 
   return {
@@ -159,6 +171,8 @@ export async function askOtherCodebase(
     answer: summarySegments.join("\n\n"),
     createdAgents: setup.createdAgents,
     createdConfig: setup.createdConfig,
+    clonedFromGit: setup.clonedFromGit,
+    gitUrl: setup.gitUrl,
   };
 }
 

@@ -17,7 +17,7 @@ export function createCodeAnalysisServer(): McpServer {
     "ask-other-codebase",
     {
       description:
-        "Retrieve architecture, API insights, code snippets and other information from another codebase",
+        "Retrieve architecture, API insights, code snippets and other information from another codebase. Supports both local file paths and Git repository URLs (GitHub, GitLab, Bitbucket, etc.)",
       inputSchema: askOtherCodebaseParamsSchema.shape,
     },
     async ({ projectPath, question }) => {
@@ -27,6 +27,8 @@ export function createCodeAnalysisServer(): McpServer {
         sessionId: result.sessionId,
         createdAgents: result.createdAgents,
         createdConfig: result.createdConfig,
+        clonedFromGit: result.clonedFromGit,
+        gitUrl: result.gitUrl,
       };
       return {
         content: [

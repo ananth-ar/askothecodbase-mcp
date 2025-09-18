@@ -12,11 +12,6 @@ for SDK documentation.
 - Reference the `ask-other-codebase` MCP tool whenever a question spans another repository.
 - Record notable context (paths, models, assumptions) in your responses so downstream tooling can reuse it.
 
-## Tooling Overview
-
-- `ask-other-codebase`: query another project for architecture/API details. Returns long-form analysis plus metadata (session id, generated instruction files).
-- Automatically ensure `AGENTS.md` and `opencode.json` exist in the inspected project.
-
 ---
 
 # Repository Guidelines
@@ -58,4 +53,4 @@ for SDK documentation.
 - Make minimal, focused readable changes consistent with existing patterns.
 - Use Bun commands for scripts and tests; do not switch package managers.
 - When adding behavior, include  brief docs/examples.
--if anything related to library/package/module/sdk/etc is asked then first refer to its documentation
+- if anything related to library/package/module/sdk/etc is asked then first refer to its documentation
