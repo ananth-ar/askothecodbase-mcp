@@ -1,7 +1,7 @@
-# Code Analysis MCP
+# Ask Other Codebase MCP
 
 ## Overview
-Code Analysis MCP is a Bun-based Model Context Protocol (MCP) server that wraps the opencode SDK to deliver deep, read-only codebase investigations. The entry point in `index.ts:1` boots a server that exposes a single `ask-other-codebase` tool capable of answering architecture, API, and flow questions about local projects or remote Git repositories without mutating any files.
+ Ask Other Codebase MCP is a Bun-based Model Context Protocol (MCP) server that wraps the opencode SDK to deliver deep, read-only codebase investigations. The entry point in `index.ts:1` boots a server that exposes a single `ask-other-codebase` tool capable of answering architecture, API, and flow questions about local projects or remote Git repositories without mutating any files.
 
 ## Key Features
 - Read-only MCP server registered in `src/mcp.ts:9` with metadata and stdio transport.
