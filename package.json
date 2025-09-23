@@ -1,10 +1,9 @@
 {
-  "name": "project_mcp",
+  "name": "code-analysis-mcp",
   "module": "index.ts",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run src/login-server.ts",
     "start": "bun run index.ts",
     "build": "bun build ./index.ts --outdir ./build --target bun --external @opencode-ai/sdk"
   },

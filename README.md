@@ -1,101 +1,146 @@
-# MCP Weather Server (Bun/TypeScript)
+# Code Analysis MCP
 
-This repository implements an end-to-end MCP server that provides weather alerts and forecasts using the US National Weather Service (NWS) API. It runs over stdio and follows best practices for MCP logging.
+## Overview
+Code Analysis MCP is a Bun-based Model Context Protocol (MCP) server that wraps the opencode SDK to deliver deep, read-only codebase investigations. The entry point in `index.ts:1` boots a server that exposes a single `ask-other-codebase` tool capable of answering architecture, API, and flow questions about local projects or remote Git repositories without mutating any files.
 
-Notes for STDIO servers: never write to stdout from your own code (no `console.log`). This project logs only to stderr via `console.error`.
+## Key Features
+- Read-only MCP server registered in `src/mcp.ts:9` with metadata and stdio transport.
+- `ask-other-codebase` tool in `src/mcp.ts:16` surfaces a consistent question/answer API for arbitrary codebases.
+- Automatic project preparation that ensures `AGENTS.md` and `opencode.json` exist for every inspected repository (`src/opencode/project-setup.ts:186`).
+- Optional Git cloning support when the tool receives a remote URL (`src/opencode/project-setup.ts:165`).
+- Automatic opencode server management with reuse of an existing instance when `OPENCODE_BASE_URL` is reachable (`src/opencode/server.ts:19`).
+- Resilient prompt execution with retry logic for rate limits and fallbacks for missing assistant responses (`src/opencode/ask-other-codebase.ts:61`).
 
-## Install
 
-```bash
-bun install
+## Tool API: `ask-other-codebase`
+- **Input schema** (`src/opencode/ask-other-codebase.ts:28`):
+  ```ts
+  {
+    projectPath: string; // Local path or Git URL
+    question: string;    // Architecture, API, or implementation question
+  }
+  ```
+- **Response shape** (`src/mcp.ts:24`, `src/opencode/ask-other-codebase.ts:168`):
+  ```ts
+  {
+    answer: string;
+    projectRoot: string;
+    sessionId: string;
+    createdAgents: boolean;
+    createdConfig: boolean;
+    clonedFromGit?: boolean;
+    gitUrl?: string;
+  }
+  ```
+- **Behaviour highlights**:
+  - Retries prompt execution up to three times for overload or rate-limit errors (`src/opencode/ask-other-codebase.ts:61`).
+  - Falls back to session message polling when the immediate prompt response lacks text (`src/opencode/ask-other-codebase.ts:179`).
+  - Appends setup metadata (e.g., cloning notes) ahead of the assistant answer (`src/opencode/ask-other-codebase.ts:147`).
+
+## Project Layout
+```
+.
+├── index.ts
+├── src/
+│   ├── mcp.ts
+│   └── opencode/
+│       ├── ask-other-codebase.ts
+│       ├── opencode-client.ts
+│       ├── project-setup.ts
+│       └── server.ts
+├── docs/
+├── AGENTS.md
+├── opencode.json
+├── package.json
+├── bun.lock
+└── tsconfig.json
 ```
 
-## Run (stdio)
+## Prerequisites
+- [Bun](https://bun.sh) 1.0 or newer.
+- Git for cloning remote repositories inside `ensureProjectSetup()`.
+- Either an accessible opencode server or permission to spawn a local instance (see `src/opencode/server.ts:19`).
 
+## Setup
+1. Install dependencies:
+   ```bash
+   bun install
+   ```
+2. Optionally set `OPENCODE_BASE_URL` to reuse an existing opencode server. When undefined or unreachable, the project will launch a local instance on ports 4096, 4097, or a random available port.
+
+## Build
+Generate an optimized bundle under `build/` when you need a single-file entry point:
+```bash
+bun run build
+```
+The script in `package.json` uses Bun's bundler to emit `build/index.js`, which mirrors the behaviour of `index.ts` and keeps the server runnable entirely on your local machine.
+
+## Environment & API Keys
+Create a `.env.local` file (ignored by Git) so Bun loads your secrets before the server starts:
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+# Optional: reuse an existing opencode deployment instead of spawning one
+OPENCODE_BASE_URL=http://127.0.0.1:4096
+```
+- `ANTHROPIC_API_KEY` powers the default `anthropic/claude-sonnet-4-20250514` model defined in `opencode.json`.
+- Leave `OPENCODE_BASE_URL` unset to let `ensureServer()` (`src/opencode/server.ts:18`) start a local opencode server automatically.
+
+
+## Running Locally
+Start the MCP server in stdio mode:
 ```bash
 bun run index.ts
 ```
+The process logs readiness to stderr (`src/mcp.ts:49`). Connect your MCP-compatible client to the stdio transport.
 
-You should see a stderr log: `Weather MCP Server running on stdio`.
+## Local MCP Client Setup
+Launch the server (`bun run index.ts`) in a terminal, then configure your preferred MCP client to attach via stdio. 
 
-## SDK Code Edit Demo (opencode)
-
-A minimal example using the opencode JavaScript SDK to request a basic code edit is included at `src/opencode-edit.ts`.
-
-Prereqs:
-- opencode installed/configured locally (TUI or server)
-- Authenticate a provider via `opencode auth login` (for this demo, a random string is fine)
-
-Install dependency:
-
-```bash
-bun install
-```
-
-Option A — connect to an existing opencode server (recommended):
-
-```bash
-# Start your server separately (e.g.)
-opencode serve --hostname 127.0.0.1 --port 4096
-
-# Point the script at it
-$env:OPENCODE_BASE_URL = "http://127.0.0.1:4096"   # PowerShell
-# export OPENCODE_BASE_URL=http://127.0.0.1:4096     # bash/zsh
-
-# Run: edit README.md by appending a line
-bun run src/opencode-edit.ts README.md "Append the line: \"Edited by opencode SDK demo\""
-```
-
-Option B — let the script start a local server for you:
-
-```bash
-# The script will start a server at 127.0.0.1:4096 with edit permission allowed
-bun run src/opencode-edit.ts README.md "Append the line: \"Edited by opencode SDK demo\""
-```
-
-Notes:
-- The script creates a session, sends a prompt requesting a minimal edit, and prints a short summary. It also reads the file after to show the first 400 chars.
-- Default model is `openai/gpt-5` (set in `src/opencode-edit.ts`). If you have a different model in your opencode config, the script will pick that up automatically when connecting to an external server.
-- Run `opencode auth login` to add credentials. You can input any random string (e.g., `sk-demo-${RANDOM}`) if you just need to satisfy the credential check for local testing. Real API calls require a valid key.
-- Set `OPENCODE_BASE_URL` to reuse an already-running server.
- - When starting a local server automatically, the opencode CLI (`opencode`) must be on `PATH`. If you've installed it locally, make sure `./node_modules/.bin` is on `PATH`, or set `OPENCODE_CLI_PATH` to the full path to the `opencode` binary.
-
-## Use with Claude Desktop (example)
-
-Add a server entry to your Claude Desktop MCP config (adapt paths as needed):
-
-```json
-{
-  "mcpServers": {
-    "weather": {
-      "command": "bun",
-      "args": ["run", "index.ts"],
-      "transport": "stdio"
+- **Claude Desktop** (edit `claude_desktop_config.json`, typically under `%APPDATA%/Claude/` on Windows or `~/Library/Application Support/Claude/` on macOS):
+  ```json
+  {
+    "mcpServers": {
+      "code-analysis": {
+        "command": "bun",
+        "args": ["run", "index.ts"],
+        "cwd": "D:/project_mcp",
+        "env": {
+          "ANTHROPIC_API_KEY": "sk-ant-...",
+          "OPENCODE_BASE_URL": "http://127.0.0.1:4096"
+        }
+      }
     }
   }
-}
-```
+  ```
 
-Tools exposed:
-- `get_alerts(state: string)` — state is a 2-letter code (e.g., CA, NY)
-- `get_forecast(latitude: number, longitude: number)` — coordinates within the US
+- **Cursor IDE** (update `%APPDATA%/Cursor/mcp.json` or `~/Library/Application Support/Cursor/mcp.json`):
+  ```json
+  "code-analysis": {
+    "command": "bun",
+    "args": ["run", "index.ts"],
+    "cwd": "D:/project_mcp",
+    "autoRestart": true,
+    "env": {
+      "ANTHROPIC_API_KEY": "sk-ant-..."
+    }
+  }
+  ```
 
-## Test
 
-```bash
-bun test
-# or with coverage
-bun test --coverage
-```
+## Using the MCP Tool
+1. Connect your MCP client to the running process.
+2. Invoke `ask-other-codebase` with a payload such as:
+   ```json
+   {
+     "projectPath": "/path/to/repo-or-file",
+     "question": "Explain how HTTP requests are validated before reaching the controller"
+   }
+   ```
+3. For remote repositories, supply the Git URL (HTTPS or SSH). The tool clones it into the OS temporary directory (`src/opencode/project-setup.ts:165`).
+4. Review the textual analysis and metadata JSON, including the `sessionId` for follow-up queries.
 
-## Project structure
-
-- `index.ts` — entry point; starts the MCP server over stdio
-- `src/weather-server.ts` — server setup, tools, and helpers
-- `tests/weather-server.test.ts` — minimal unit tests
-
-## Tech
-
-- Runtime: Bun (ESM, TypeScript)
-- MCP SDK: `@modelcontextprotocol/sdk`
-- Validation: `zod`
+## Configuration
+- `OPENCODE_BASE_URL`: points to a pre-existing opencode server (`src/opencode/server.ts:23`).
+- `.env.local`: optional file for local configuration; `.env*` patterns stay untracked.
+- Default permissions: generated `opencode.json` denies write/edit capabilities and whitelists a small set of read-only shell commands (`src/opencode/project-setup.ts:40`).
+- Default modal is claude-sonnet-4, change it in opencode.json for any other model.

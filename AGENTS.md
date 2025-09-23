@@ -2,8 +2,6 @@
 
 This repository hosts a read-only Model Context Protocol server powered by opencode.
 Use it to investigate unfamiliar codebases, map architecture, and answer API questions without mutating files.
-This project uses the opencode SDK at its core for development so anything bit related to this is asked then always refer to the `docs/` folder 
-for SDK documentation.
 
 ## Agent Expectations
 
